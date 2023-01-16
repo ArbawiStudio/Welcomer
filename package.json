@@ -17,7 +17,8 @@
   },
   "homepage": "https://github.com/ArbawiStudio/Welcomer#readme",
   "dependencies": {
-    "discord.js": "^13.8.1",
-    "quick.db": "^7.1.3"
+    "discord.js": "^13.12.0",
+    "dotenv": "^16.0.3",
+    "pro.db": "^3.0.8"
   }
 }

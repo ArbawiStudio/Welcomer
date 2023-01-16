@@ -1,76 +1,69 @@
-const { Client, Intents, MessageEmbed } = require('discord.js')
-const client = new Client({ 
+require('dotenv').config()
+const { Client, Intents, Collection } = require('discord.js')
+const db = require('pro.db')
+const client = new Client({
     intents: [
-        Intents.FLAGS.GUILDS, 
+        Intents.FLAGS.GUILDS,
         Intents.FLAGS.GUILD_MESSAGES,
-        Intents.FLAGS.GUILD_MEMBERS
+        Intents.FLAGS.GUILD_MEMBERS,
+        Intents.FLAGS.GUILD_INVITES,
+        Intents.FLAGS.MESSAGE_CONTENT
     ]
 })
-const db = require('quick.db')
+
+const Invites = new Collection()
+
+client.on('messageCreate', async KINGER => {
+    if(KINGER.content.startsWith('setup-channel')) {
+        const Args = KINGER.content.split(' ').slice(1).join(' ')
+        const Channel = KINGER.mentions.channels.first() || KINGER.guild.channels.cache.get(Args)
+        if(!Channel) return;
+        db.set(`Channel_${KINGER.guild.id}`, Channel.id)
+        KINGER.channel.send({ content: `${Channel} has been Successfully Changed` }).then((Msg) => {
+            setTimeout(() => {
+                Msg.delete()
+            }, 5000)
+        })
+    } else if(KINGER.content.startsWith('setup-message')) {
+        const Args = KINGER.content.split(' ').slice(1).join(' ')
+        if(!Args) return;
+        db.set(`Message_${KINGER.guild.id}`, Args)
+        KINGER.channel.send({ content: `\`\`\`${Args}\`\`\`` }).then((Msg) => {
+            setTimeout(() => {
+                Msg.delete()
+            }, 5000)
+        })
+    }
+})
 
 client.on('ready', async() => {
-    let Console = console.log;
-    Console(`${client.user.username} is Online!`)
+    console.log(`${client.user.username} is Online!`)
+    await client.guilds.cache.forEach(async Guild => {
+        await (await Guild.invites.fetch()).forEach(async Invite => {
+            Invites.set(Invite.code, Invite.uses, Invite.url)
+        })
+    })
 })
 
-client.on('messageCreate', async TOBZiCoder => {
-    if(TOBZiCoder.content.startsWith(require('./config.json').PREFIX + 'help')) {
-        const EMBED = new MessageEmbed()
-           .setAuthor(TOBZiCoder.author.tag, TOBZiCoder.author.displayAvatarURL())
-           .setThumbnail(TOBZiCoder.author.displayAvatarURL())
-           .setDescription(`***\`${require('./config.json').PREFIX}set-message  :\`  Set a Message of Welcome***\n***\`${require('./config.json').PREFIX}set-channel  :\` Set a Channel of Welcome***`)
-           .addField(`_ _`, `
-***\`\`\`fix
-[User]               : Name + Tag (Member)
-[UserName]           : Username of Member
-[UserTag]            : Tag of Member
-[UserID]             : ID of Member
-[UserCreatedAt]      : Joined Discord (Member)
-[MembersCount]       : Members Count
-[guildName]          : Server Name
-[guildID]            : Server ID
-[guildOwner]         : Server Owner
-\`\`\`***`)
-        TOBZiCoder.channel.send({ embeds: [EMBED] })
-    } else if(TOBZiCoder.content.startsWith(require('./config.json').PREFIX + 'set-message')) {
-        if(!TOBZiCoder.member.permissions.has('MANAGE_GUILD')) return TOBZiCoder.react('❌')
-        const args = await TOBZiCoder.content.split(' ').slice(1).join(' ')
-        if(!args) return TOBZiCoder.react('❌')
-        db.set(`WelcomeMessage_${TOBZiCoder.guild.id}`, args)
-        TOBZiCoder.react('✅')
-    } else if(TOBZiCoder.content.startsWith(require('./config.json').PREFIX + 'set-channel')) {
-        if(!TOBZiCoder.member.permissions.has('MANAGE_GUILD')) return TOBZiCoder.react('❌')
-        const Channel = await TOBZiCoder.mentions.channels.first()
-        if(!Channel) return TOBZiCoder.react('❌')
-        db.set(`WelcomeChannel_${TOBZiCoder.guild.id}`, Channel.id)
-        TOBZiCoder.react('✅')
-    } else if(TOBZiCoder.content.startsWith(require('./config.json').PREFIX + 'join')) {
-        if(!TOBZiCoder.member.permissions.has('MANAGE_GUILD')) return TOBZiCoder.react('❌')
-        client.emit('guildMemberAdd', TOBZiCoder.member)
-        TOBZiCoder.react('✅')
-    }
-})
+client.on('inviteCreate', async Invite => Invites.set(Invite.code, Invite.uses))
+
+client.on('inviteDelete', async Invite => Invites.delete(Invite.code))
 
 client.on('guildMemberAdd', async Member => {
-    const Channel = await db.get(`WelcomeChannel_${Member.guild.id}`)
-    if(!Channel) return;
-    const Message = await db.get(`WelcomeMessage_${Member.guild.id}`)
-    if(!Message) return;
-    if(Message === null) {
-        db.set(`WelcomeMessage_${Member.guild.id}`, `[User] has been invited by **[inviterTag].**`)
-    }
-
-    const Content = await Message
-        .replace(`[User]`, Member.user)
-        .replace(`[UserName]`, Member.user.username)
-        .replace(`[UserTag]`, Member.user.tag)
-        .replace(`[UserID]`, Member.user.id)
-        .replace(`[UserCreatedAt]`, `<t:${parseInt(Member.user.createdAt / 1000)}:f>`)
-        .replace(`[MembersCount]`, Member.guild.memberCount)
-        .replace(`[guildName]`, Member.guild.name)
-        .replace(`[guildID]`, Member.guild.id)
-        .replace(`[guildOwner]`, `<@${Member.guild.ownerId}>`)
-    Member.guild.channels.cache.get(Channel).send(Content)
+    const MessageDB = db.get(`Message_${Member.guild.id}`)
+    const ChannelDB = db.get(`Channel_${Member.guild.id}`)
+    if(!MessageDB && !ChannelDB) returnl;
+    const Invite = await (await Member.guild.invites.fetch()).find((Invite) => Invite.uses > Invites.get(Invite.code))
+    const Channel = await Member.guild.channels.cache.get(ChannelDB)
+    const Variables = MessageDB
+    .replace(/{user}/g, Member.user)
+    .replace(/{id}/g, Member.user.id)
+    .replace(/{inviter}/g, Invite.inviter)
+    .replace(/{inviterTag}/g, Invite.inviter.tag)
+    .replace(/{inviterID}/g, Invite.inviter.tag)
+    .replace(/{invites}/g, Invite.uses)
+    .replace(/{memberCount}/g, Member.guild.memberCount)
+    Channel.send({ content: `${Variables}` })
 })
 
-client.login(require('./config.json').TOKEN)
+client.login(process.env.Token)
